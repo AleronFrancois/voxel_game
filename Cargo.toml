@@ -1,0 +1,16 @@
+[package]
+name = "chunk_mesher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.17"
+glam = "0.27"
+bitflags = "2.0"
+fastnoise-lite = "1.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
