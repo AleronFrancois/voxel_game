@@ -20,7 +20,7 @@ pub const CHUNK_VOLUME: usize =
     CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
     
 
-static GET_COORDS: LazyLock<[(usize, usize, usize); CHUNK_VOLUME]> = LazyLock::new(|| {
+pub static GET_COORDS: LazyLock<[(usize, usize, usize); CHUNK_VOLUME]> = LazyLock::new(|| {
     let mut block_coordinates = [(0, 0, 0); CHUNK_VOLUME];
     let mut block_index = 0;
 
@@ -39,7 +39,7 @@ static GET_COORDS: LazyLock<[(usize, usize, usize); CHUNK_VOLUME]> = LazyLock::n
 
 #[derive(Clone, Copy)]
 pub struct Chunk {
-    blocks: [Block; CHUNK_VOLUME],
+    pub blocks: [Block; CHUNK_VOLUME],
 }
 
 
@@ -51,7 +51,7 @@ impl Chunk {
     }
 
 
-    fn get_index(block_x: usize, block_y: usize, block_z: usize) -> usize {
+    pub fn get_index(block_x: usize, block_y: usize, block_z: usize) -> usize {
         block_x + block_z * CHUNK_SIZE_X + block_y * CHUNK_SIZE_XY
     }
 }
