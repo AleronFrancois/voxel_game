@@ -1,22 +1,26 @@
 use bitflags::bitflags;
+use rand::Rng;
 
 
+// Defines the blocks type
 #[derive(Clone, Copy)]
 pub struct Block {
     pub block_type: BlockType,
 }
 
 
+// Defines each block type
 #[derive(Clone, Copy)]
 pub enum BlockType {
     Air,
     Grass,
     Dirt,
     Stone,
-    Sand,
+    Coal,
 }
 
 
+// Block face visibility flags
 bitflags! {
     #[derive(Copy, Clone)]
     pub struct BlockFaces: u8 {
@@ -31,13 +35,15 @@ bitflags! {
 
 
 impl Block {
-    pub fn new() -> Self {
+    /// Sets default block to air.
+    pub fn default() -> Self {
         Self {
             block_type: BlockType::Air,
         }
     }
     
 
+    /// Returns block solidity.
     pub fn is_solid(&self) -> bool {
         match self.block_type {
             BlockType::Air => false,
@@ -52,12 +58,13 @@ const PADDING: f32 = 0.5 / 1024.0;
 
 
 impl BlockType {
+    /// Gets texture uv grid location
     pub fn get_texture(&self) -> [[f32; 2]; 4] {
         let (texture_x, texture_y) = match self {
             BlockType::Grass => (0, 0),
             BlockType::Dirt  => (2, 0),
             BlockType::Stone => (1, 0),
-            BlockType::Sand  => (0, 3),
+            BlockType::Coal  => (2, 2),
             _ => (0, 0),
         };
 
@@ -73,10 +80,24 @@ impl BlockType {
             [u_min, v_max],
         ]
     }
+
+
+    /// Returns spawn chance of each rare block
+    pub fn get_chance(block_type: BlockType) -> bool {
+        let mut rng = rand::thread_rng();
+        let generate = rng.gen_range(0..100);
+
+        let chance = match block_type {
+            BlockType::Coal => 5,   
+            _ => 0,          
+        };
+
+        generate < chance
+    }
 }
 
 
-//  Block vertices
+// Block vertices
 pub const VERTICES: [[[f32; 3]; 4]; 6] = [
     [   // Front face
         [0.0, 0.0, 1.0], [1.0, 0.0, 1.0],
@@ -140,6 +161,7 @@ pub const INDICES: [u32; 6] = [
 ];
 
 
+/// Offsets face vertices by block position within the chunk.
 pub fn offset_vertices(
     face_vertices: &[[f32; 3]; 4], 
     block_offset: [f32; 3], 

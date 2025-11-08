@@ -7,7 +7,7 @@ mod config {
 
     use bevy::prelude::*;
 
-    pub const FONT_SIZE: f32 = 32.0;
+    pub const FONT_SIZE: f32 = 16.0;
     pub const FONT_COLOR: Color = Color::WHITE;
     pub const UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -92,14 +92,12 @@ fn extract_fps(diagnostics: &Res<DiagnosticsStore>) -> Option<f64> {
 
 
 fn spawn_text(mut commands: Commands) {
-    commands
-        .spawn((
-            Text::new(config::STRING_INITIAL),
-            TextFont {
-                font_size: config::FONT_SIZE / 2.0,
-                ..Default::default()
-            },
-            TextColor(config::FONT_COLOR),
-        ))
-        .insert(FpsCounterText);
+    commands.spawn((
+        Text::new(config::STRING_INITIAL),
+        TextFont {
+            font_size: config::FONT_SIZE,
+            ..Default::default()
+        },
+        TextColor(config::FONT_COLOR),
+    )).insert(FpsCounterText);
 }

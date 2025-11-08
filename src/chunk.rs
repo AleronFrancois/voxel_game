@@ -46,7 +46,7 @@ pub struct Chunk {
 impl Chunk {
     pub fn new() -> Self {
         Self {
-            blocks: [Block::new(); CHUNK_VOLUME],
+            blocks: [Block::default(); CHUNK_VOLUME],
         }
     }
 
@@ -63,6 +63,7 @@ pub fn prepare_geometry(chunk_position: &IVec3) -> Chunk {
     noise.set_noise_type(Some(fastnoise_lite::NoiseType::Perlin));
     noise.set_seed(Some(213123));
     noise.set_frequency(Some(0.065));
+    
 
     let base_x = chunk_position.x as f32 * CHUNK_SIZE_X as f32;
     let base_z = chunk_position.z as f32 * CHUNK_SIZE_Z as f32;
@@ -77,21 +78,23 @@ pub fn prepare_geometry(chunk_position: &IVec3) -> Chunk {
                 if block_y > height as usize {
                     continue;
                 }
-                if block_y == height as usize {  
-                    chunk.blocks[Chunk::get_index(block_x, block_y, block_z)] = Block { 
-                        block_type: BlockType::Grass,
-                    };
+
+                let block_type = if block_y == height as usize {  
+                    BlockType::Grass
                 }
                 else if block_y >= (height as usize).saturating_sub(3) {
-                    chunk.blocks[Chunk::get_index(block_x, block_y, block_z)] = Block { 
-                        block_type: BlockType::Dirt,
-                    };
+                    BlockType::Dirt
                 }
                 else {
-                    chunk.blocks[Chunk::get_index(block_x, block_y, block_z)] = Block {
-                        block_type: BlockType::Stone,
-                    };
-                }
+                    if BlockType::get_chance(BlockType::Coal) {
+                        BlockType::Coal
+                    } 
+                    else {
+                        BlockType::Stone
+                    }
+                };
+
+                chunk.blocks[Chunk::get_index(block_x, block_y, block_z)] = Block { block_type };
             }
         }
     }
@@ -161,9 +164,6 @@ pub fn build_mesh(chunk_position: IVec3, world: &WorldChunks) -> Mesh {
 
     chunk_mesh
 }
-
-
-
 
 
 fn get_visibility(

@@ -9,6 +9,8 @@ glam = "0.27"
 bitflags = "2.0"
 fastnoise-lite = "1.0"
 avian3d = "0.4"
+rand = "0.8"
+bevy_atmosphere = "0.13"
 
 [profile.dev]
 opt-level = 1

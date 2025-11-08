@@ -1,27 +1,36 @@
-use std::f32::consts::FRAC_PI_2;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::window::PrimaryWindow;
+use std::f32::consts::FRAC_PI_2;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use EulerRot::YXZ;
+use glam::IVec3;
+
+use crate::chunk::*;
+use crate::block::*;
+use crate::world::*;
 
 
+// Player component
 #[derive(Component)]
 pub struct Player;
 
 
+// Player settings
 #[derive(Resource)]
 pub struct PlayerSettings {
     pub move_speed: f32,
 }
 
 
+// Camera settings
 #[derive(Component)]
 pub struct CameraSettings {
     pub sensitivity: f32,
 }
 
 
+// Jump state resource
 #[derive(Resource, Default)]
 pub struct JumpState {
     pub should_jump: bool,
@@ -29,7 +38,16 @@ pub struct JumpState {
 }
 
 
+// Update block 
+#[derive(Resource, Default)]
+pub struct BlockActions {
+    pub should_destroy: bool,
+    pub should_place: bool,
+}
+
+
 impl JumpState {
+    /// Sets default jump values.
     pub fn default() -> Self {
         Self {
             should_jump: false,
@@ -40,18 +58,31 @@ impl JumpState {
 
 
 impl PlayerSettings {
+    /// Sets default player settings.
     pub fn default() -> Self {
         Self {
-            move_speed: 15.0,
+            move_speed: 8.0,
         }
     }
 }
 
 
 impl CameraSettings {
+    /// Sets default camera settings.
     pub fn default() -> Self {
         Self {
             sensitivity: 0.4,
+        }
+    }
+}
+
+
+impl BlockActions {
+    /// Sets default block actions.
+    pub fn default() -> Self {
+        Self {
+            should_destroy: false,
+            should_place: false,
         }
     }
 }
@@ -63,9 +94,9 @@ pub fn spawn_player(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let start_position = Vec3::new(0.0, 80.0, 0.0);
+    let spawn_location = Vec3::new(0.0, 300.0, 0.0);
 
-    // Add mesh data to asset storage
+    // Adds mesh data to asset storage
     let mesh_handle = meshes.add(Sphere::default().mesh().ico(5).unwrap());
     let material_handle = materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.0, 0.0),
@@ -73,10 +104,10 @@ pub fn spawn_player(
         ..Default::default()
     });
 
-    // Spawn player entity
+    // Spawns player entity with collider
     let player_entity = commands.spawn((
         Player,
-        Transform::from_translation(start_position),
+        Transform::from_translation(spawn_location),
         GlobalTransform::default(),
         RigidBody::Dynamic,
         Collider::sphere(1.0),
@@ -86,7 +117,7 @@ pub fn spawn_player(
         Friction::ZERO,
     )).id();
 
-    // Spawn camera entity
+    // Spawns camera entity
     let camera_entity = commands.spawn((
         Camera3d::default(),
         Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
@@ -94,7 +125,7 @@ pub fn spawn_player(
         GlobalTransform::default(),
     )).id();
 
-    // Spawn mesh entity
+    // Spawns mesh entity
     let mesh_entity = commands.spawn((
         Mesh3d(mesh_handle),
         MeshMaterial3d(material_handle),
@@ -106,7 +137,7 @@ pub fn spawn_player(
         GlobalTransform::default(),
     )).id();
 
-    // set players children
+    // Sets players children
     commands.entity(player_entity).add_child(mesh_entity);
     commands.entity(player_entity).add_child(camera_entity);
 }
@@ -122,12 +153,10 @@ pub fn player_movement(
     time: Res<Time>,
 ) {
     let deltatime = time.delta_secs();
-    let camera_transform = if let Ok(camera) = camera_query.single() {
-        camera
-    } 
-    else {
-        return;
-    };
+
+    // Gets camera transform
+    let camera_transform = if let Ok(camera) = camera_query.single() { camera } 
+    else { return; };
 
     // Calculate forward & right from camera yaw
     let yaw = camera_transform.rotation.to_euler(EulerRot::YXZ).0;
@@ -142,9 +171,7 @@ pub fn player_movement(
     if input.pressed(KeyCode::KeyA) { direction.x -= 1.0; }
     if input.pressed(KeyCode::KeyD) { direction.x += 1.0; }
     if input.pressed(KeyCode::ShiftLeft) { speed *= 2.0; }
-    if input.pressed(KeyCode::Space) { 
-        jump_state.should_jump = true;
-    }
+    if input.pressed(KeyCode::Space) { jump_state.should_jump = true; }
 
     if direction.length_squared() > 0.0 {
         direction = direction.normalize();
@@ -196,4 +223,62 @@ pub fn camera_look(
     yaw -= mouse_motion.delta.x * deltatime * sensitivity;
 
     transform.rotation = Quat::from_euler(YXZ, yaw, pitch, 0.0);
+}
+
+
+/// Destroys selected block within chunk.
+pub fn destroy_block(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    mut world: ResMut<WorldChunks>,
+    chunk_entities: Res<ChunkEntities>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut block_state: ResMut<BlockActions>,
+) {
+    if mouse_input.just_pressed(MouseButton::Left) {
+        let player_transform = match camera_query.single() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let player_position = player_transform.translation();
+
+        let block_x = player_position.x.floor() as i32;
+        let block_y = (player_position.y - 2.0).floor() as i32;
+        let block_z = player_position.z.floor() as i32;
+
+        let chunk_x = block_x.div_euclid(CHUNK_SIZE_X as i32);
+        let chunk_y = block_y.div_euclid(CHUNK_SIZE_Y as i32);
+        let chunk_z = block_z.div_euclid(CHUNK_SIZE_Z as i32);
+
+        let local_x = block_x.rem_euclid(CHUNK_SIZE_X as i32) as usize;
+        let local_y = block_y.rem_euclid(CHUNK_SIZE_Y as i32) as usize;
+        let local_z = block_z.rem_euclid(CHUNK_SIZE_Z as i32) as usize;
+
+        let chunk_position = IVec3::new(chunk_x, chunk_y, chunk_z);
+
+        if let Some(chunk) = world.chunks.get_mut(&chunk_position) {
+            let block_index = Chunk::get_index(local_x, local_y, local_z);
+            chunk.blocks[block_index] = Block::default(); 
+
+            // Rebuild mesh with updated chunk
+            let mesh = build_mesh(chunk_position, &world);
+            let mesh_handle = meshes.add(mesh);
+
+            if let Some(entity) = chunk_entities.map.get(&chunk_position) {
+                commands.entity(*entity).insert(Mesh3d(mesh_handle));
+            }
+
+            // Update collider
+            let points = get_points(&chunk_position, &world);
+            if let Some(entity) = chunk_entities.colliders.get(&chunk_position) {
+                commands
+                    .entity(*entity)
+                    .insert(Collider::voxels_from_points(Vec3::splat(1.0), &points));
+            }
+
+            update_chunks(chunk_position, &world, &chunk_entities, &mut meshes, &mut commands);
+        }
+        block_state.should_destroy = false;
+    }
 }

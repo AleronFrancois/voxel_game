@@ -3,9 +3,7 @@
 use std::collections::VecDeque;
 use std::collections::HashSet;
 use std::collections::HashMap;
-use avian3d::prelude::Collider;
-use avian3d::prelude::RigidBody;
-use bevy::mesh::Indices;
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use glam::IVec3;
 
@@ -68,7 +66,7 @@ pub fn queue_chunks(
         let current_chunk = IVec3::new(chunk_x, 0, chunk_z);
 
         player_chunks.last_chunk = current_chunk;
-    
+        
         for distance_x in -RENDER_DISTANCE..=RENDER_DISTANCE {
             for distance_z in -RENDER_DISTANCE..=RENDER_DISTANCE {
                 let chunk_position = IVec3::new(chunk_x + distance_x, 0, chunk_z + distance_z);
@@ -100,15 +98,12 @@ pub fn load_chunks(
             world.chunks.insert(chunk_position, prepared_geometry);
             let chunk_mesh = build_mesh(chunk_position, &world);
 
-            // Chunk position
-            let chunk_translation = Vec3::new(
+            // Glabal chunk position
+            let global_position = Vec3::new(
                 chunk_position.x as f32 * CHUNK_SIZE_X as f32,
                 0.0,
                 chunk_position.z as f32 * CHUNK_SIZE_Z as f32,
             );
-
-            // Extract vertices and indices first
-            let (vertices, triangles) = get_data(&chunk_mesh);
 
             // Add mesh to asset storage
             let mesh_handle = meshes.add(chunk_mesh);
@@ -123,18 +118,22 @@ pub fn load_chunks(
             let chunk_entity = commands.spawn((
                 Mesh3d(mesh_handle),
                 MeshMaterial3d(material_handle),
-                Transform::from_translation(chunk_translation),
+                Transform::from_translation(global_position),
                 GlobalTransform::default(),
             )).id();
+
+            // Gets points for each solid block
+            let points = get_points(&chunk_position, &world);
 
             // Spawn collider
             let collider_entity = commands.spawn((
                 RigidBody::Static,
-                Collider::trimesh(vertices, triangles),
-                Transform::from_translation(chunk_translation),
+                Collider::voxels_from_points(Vec3::splat(1.0), &points),
+                Transform::from_translation(global_position),
                 Name::new("ChunkCollider"),
             )).id();
 
+            // Add chunk and collider entities to storage
             chunk_entities.map.insert(chunk_position, chunk_entity);
             chunk_entities.colliders.insert(chunk_position, collider_entity);
             update_chunks(chunk_position, &world, &chunk_entities, &mut meshes, &mut commands);
@@ -143,35 +142,23 @@ pub fn load_chunks(
 }
 
 
-/// Extracts vertices and indices from the chunk mesh.
-fn get_data(chunk_mesh: &Mesh) -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let vertices = chunk_mesh
-        .attribute(Mesh::ATTRIBUTE_POSITION)
-        .unwrap()
-        .as_float3()
-        .unwrap()
-        .to_vec();
-    let vertices: Vec<Vec3> = vertices
-        .iter()
-        .map(|&[x, y, z]| Vec3::new(x, y, z))
-        .collect();
+/// Extracts solid block points from chunk.
+pub fn get_points(chunk_position: &IVec3, world: &WorldChunks) -> Vec<Vec3> {
+    let chunk = world.chunks.get(&chunk_position).unwrap();
+        let mut points = Vec::new();
+        for block_index in 0..CHUNK_VOLUME {
+            let (block_x, block_y, block_z) = GET_COORDS[block_index];
+            let block = chunk.blocks[Chunk::get_index(block_x, block_y, block_z)];
+            if block.is_solid() {
+                points.push(Vec3::new(block_x as f32, block_y as f32, block_z as f32));
+            }
+        }
 
-    let indices_u32 = if let Some(Indices::U32(index)) = chunk_mesh.indices() {
-        index
-    } else {
-        panic!("Expected U32 indices");
-    };
-
-    let mut triangles = Vec::with_capacity(indices_u32.len() / 3);
-    for chunk in indices_u32.chunks(3) {
-        triangles.push([chunk[0], chunk[1], chunk[2]]);
-    }
-
-    (vertices, triangles)
+        points // Returns block points
 }
 
 
-/// Unloads chunk entities.
+/// Unloads chunk entities around the player.
 pub fn unload_chunks(
     mut commands: Commands,
     player: Query<&Transform, With<Player>>,
@@ -182,15 +169,15 @@ pub fn unload_chunks(
         let player_chunk_x = (player_transform.translation.x / CHUNK_SIZE_X as f32).floor() as i32;
         let player_chunk_z = (player_transform.translation.z / CHUNK_SIZE_Z as f32).floor() as i32;
 
-        world.chunks.retain(|chunk_pos, _chunk| {
-            let distance_x = chunk_pos.x - player_chunk_x;
-            let distance_z = chunk_pos.z - player_chunk_z;
+        world.chunks.retain(|chunk_position, _chunk| {
+            let distance_x = chunk_position.x - player_chunk_x;
+            let distance_z = chunk_position.z - player_chunk_z;
 
             if distance_x.abs() > UNLOAD_DISTANCE || distance_z.abs() > UNLOAD_DISTANCE {
-                if let Some(entity) = chunk_entities.map.remove(chunk_pos) {
+                if let Some(entity) = chunk_entities.map.remove(chunk_position) {
                     commands.entity(entity).despawn();
                 }
-                if let Some(entity) = chunk_entities.colliders.remove(chunk_pos) {
+                if let Some(entity) = chunk_entities.colliders.remove(chunk_position) {
                     commands.entity(entity).despawn();
                 }
                 false
@@ -203,8 +190,8 @@ pub fn unload_chunks(
 }
 
 
-/// Updates chunk mesh visibility.
-fn update_chunks(
+/// Updates chunk mesh visibility around newly spawned chunk.
+pub fn update_chunks(
     chunk_position: IVec3,
     world: &WorldChunks,
     chunk_entities: &ChunkEntities,
@@ -224,3 +211,5 @@ fn update_chunks(
         }
     }
 }
+
+
